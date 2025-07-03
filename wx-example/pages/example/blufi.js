@@ -117,7 +117,7 @@ class BluFi {
     
     // 日志管理器设置
     this.enableLogManager = options.enableLogManager !== undefined ? options.enableLogManager : false;
-    this.logger = this.enableLogManager ? wx.getLogManager() : console;
+    this.logger = this.enableLogManager ? uni.getLogManager() : (options.onLog ?? console);
     
     // 自定义数据回调
     this.callbacks.onCustomData = options.onCustomData || null;
