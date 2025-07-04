@@ -106,6 +106,9 @@ Page({
         })
         this.setData({receivedCustomData: this.data.receivedCustomData});
       },
+      onWifiStatusChange: (status)=>{
+        console.log('WIFI状态变化:', status);
+      }
     });
     console.log('init BluFi', this.data.prefix, this.data.enableChecksum);
     // 初始化蓝牙
