@@ -730,7 +730,7 @@ async _initSecurity() {
         ssidMap[ssid] = true;
         result.push({
           ssid,
-          rssi
+          rssi: rssi - 256
         });
       }
       
@@ -753,21 +753,89 @@ async _initSecurity() {
       const staConnStatus = data[1];
       const softApConnNum = data[2];
       
-      let ssid = '';
+      let state;
       if (data.length > 3) {
-        ssid = this.constructor.uint8ArrayToString(data.slice(3));
+        state = this._parseWifiStateData(data.slice(3));
       }
       
       return {
         opMode,
         staConnStatus,
         softApConnNum,
-        ssid
+        ...state
       };
     } catch (error) {
       this.logger.warn('解析WiFi状态数据失败:', error);
       return null;
     }
+  }
+
+  /**
+   * 解析WiFi状态数据
+   * @private
+   */
+  _parseWifiStateData(data) {
+      if (data.length < 3) {
+          return null;
+      }
+      
+      let state = {}, offset = 0;
+      while (offset < data.length) {
+          if (offset + 2 > data.length) {
+            this.logger.warn("剩余数据不足，跳过");
+            break;
+          }
+      
+          const infoType = data[offset];
+          const len = data[offset + 1];
+          const dataStart = offset + 2;
+          const dataEnd = dataStart + len;
+      
+          if (dataEnd > data.length) {
+            this.logger.warn(`数据长度不足，需要${len}字节但只剩${data.length - dataStart}字节，跳过`);
+            break;
+          }
+
+          const stateBytes = data.slice(dataStart, dataEnd);
+          switch (infoType) {
+            case DATA_SUBTYPE.WIFI_BSSID:
+                  const bssid = this._arrayBufferToHex(stateBytes, ':');
+                  this.logger.log('WiFi BSSID:', bssid);
+                  state.bssid = bssid;
+                  break;
+            case DATA_SUBTYPE.WIFI_SSID:
+                  const ssid = this.constructor.uint8ArrayToString(stateBytes);
+                  this.logger.log('WiFi SSID:', ssid);
+                  state.ssid = ssid;
+                  break;
+            case DATA_SUBTYPE.WIFI_PASSWORD:
+                  const password = this.constructor.uint8ArrayToString(stateBytes);
+                  this.logger.log('WiFi PASSWORD:', password);
+                  state.password = password;
+                  break;
+            case DATA_SUBTYPE.MAX_RECONNECT:
+                  const maxRetry = stateBytes[0];
+                  this.logger.log('WiFi maxRetry:', maxRetry);
+                  state.maxRetry = maxRetry;
+                  break;
+            case DATA_SUBTYPE.WIFI_ERROR_REASON:
+                  const endReason = stateBytes[0];
+                  this.logger.log('WiFi endReason:', endReason);
+                  state.endReason = endReason;
+                  break;
+            case DATA_SUBTYPE.WIFI_ERROR_RSSI:
+                  const rssi = stateBytes[0];
+                  this.logger.log('WiFi rssi:', rssi);
+                  state.rssi = rssi;
+                  break;
+            default:
+                  this.logger.log('未处理的状态子类型:', infoType);
+          }
+      
+          offset = dataEnd;
+      }
+        
+      return state;
   }
 
   /**
@@ -1306,11 +1374,11 @@ async _initSecurity() {
    * ArrayBuffer转16进制字符串
    * @private
    */
-  _arrayBufferToHex(buffer) {
+  _arrayBufferToHex(buffer, hyphen = ' ') {
     return Array.prototype.map.call(
       new Uint8Array(buffer),
       x => ('00' + x.toString(16)).slice(-2)
-    ).join(' ');
+    ).join(hyphen);
   }
 }
 module.exports = {
