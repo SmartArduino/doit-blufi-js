@@ -1,14 +1,18 @@
 /**
- * BluFi 微信小程序实现
+ * BluFi 跨平台实现 (微信小程序 & Chrome浏览器)
  * 基于ESP32-C2的BluFi协议
  * Copyright (c) 2025, Jacques Yang. 
  * MIT License.
  */
 
+// 环境检测
+const isWeChat = typeof wx !== 'undefined' && wx.openBluetoothAdapter;
+const isBrowser = typeof navigator !== 'undefined' && navigator.bluetooth;
+
 // 常量定义
-const BLUFI_SERVICE_UUID = '0000FFFF-0000-1000-8000-00805F9B34FB';
-const BLUFI_CHAR_WRITE_UUID = '0000FF01-0000-1000-8000-00805F9B34FB';
-const BLUFI_CHAR_NOTIFY_UUID = '0000FF02-0000-1000-8000-00805F9B34FB';
+const BLUFI_SERVICE_UUID = '0000ffff-0000-1000-8000-00805f9b34fb';
+const BLUFI_CHAR_WRITE_UUID = '0000ff01-0000-1000-8000-00805f9b34fb';
+const BLUFI_CHAR_NOTIFY_UUID = '0000ff02-0000-1000-8000-00805f9b34fb';
 
 // BluFi帧类型
 const FRAME_TYPE = {
@@ -100,8 +104,17 @@ class BluFi {
    * @param {Boolean} options.enableChecksum - 是否启用CRC16校验, 默认false
    * @param {Boolean} options.enableLogManager - 是否使用wx.logManager作为日志输出, 默认false
    * @param {Function} options.onCustomData - 收到自定义数据时的回调函数, 默认为null
+   * @param {Function} options.onLog - 自定义日志回调函数, 默认为null
    */
   constructor(options = {}) {
+    // 环境检测
+    this.isWeChat = isWeChat;
+    this.isBrowser = isBrowser;
+    
+    if (!this.isWeChat && !this.isBrowser) {
+      throw new Error('不支持的运行环境，需要微信小程序或支持Web Bluetooth的浏览器');
+    }
+    
     this.deviceId = null;
     this.serviceId = null;
     this.writeCharId = null;
@@ -112,12 +125,27 @@ class BluFi {
     this.sequence = -1; // 序列号需要初始化为-1, 这样自加后会从0开始, 且必须从0开始, 否则报错
     this.callbacks = {};
     
+    // 浏览器环境特有属性
+    this.bluetoothDevice = null;
+    this.gattServer = null;
+    this.service = null;
+    this.writeCharacteristic = null;
+    this.notifyCharacteristic = null;
+    
     // 设备前缀
     this.devicePrefix = options.devicePrefix || 'BLUFI_';
     
     // 日志管理器设置
     this.enableLogManager = options.enableLogManager !== undefined ? options.enableLogManager : false;
-    this.logger = this.enableLogManager ? wx.getLogManager() : console;
+    
+    // 设置日志器
+    if (options.onLog) {
+      this.logger = options.onLog;
+    } else if (this.isWeChat && this.enableLogManager) {
+      this.logger = wx.getLogManager();
+    } else {
+      this.logger = console;
+    }
     
     // 自定义数据回调
     this.callbacks.onCustomData = options.onCustomData || null;
@@ -141,9 +169,17 @@ class BluFi {
    */
   async init() {
     try {
-      // 初始化蓝牙模块
-      await this._promisify(wx.openBluetoothAdapter);
-      this.logger.log('蓝牙初始化成功');
+      if (this.isWeChat) {
+        // 微信小程序环境
+        await this._promisify(wx.openBluetoothAdapter);
+        this.logger.log('微信小程序蓝牙初始化成功');
+      } else if (this.isBrowser) {
+        // 浏览器环境
+        if (!navigator.bluetooth) {
+          throw new Error('浏览器不支持Web Bluetooth API');
+        }
+        this.logger.log('浏览器Web Bluetooth API可用');
+      }
       return true;
     } catch (error) {
       this.logger.warn('蓝牙初始化失败:', error);
@@ -158,6 +194,19 @@ class BluFi {
    * @returns {Promise<Array>} - 扫描到的设备列表
    */
   async scanDevices(timeout = 10000, onDeviceFound = null) {
+    if (this.isWeChat) {
+      return this._scanDevicesWeChat(timeout, onDeviceFound);
+    } else if (this.isBrowser) {
+      return this._scanDevicesBrowser(timeout, onDeviceFound);
+    }
+    throw new Error('不支持的运行环境');
+  }
+
+  /**
+   * 微信小程序环境扫描设备
+   * @private
+   */
+  async _scanDevicesWeChat(timeout, onDeviceFound) {
     try {
       // 创建一个设备映射，用于跟踪已发现的设备
       const deviceMap = new Map();
@@ -222,10 +271,67 @@ class BluFi {
   }
 
   /**
+   * 浏览器环境扫描设备
+   * @private
+   */
+  async _scanDevicesBrowser(timeout, onDeviceFound) {
+    try {
+      this.logger.log('开始扫描设备');
+      
+      // 浏览器环境下，通过requestDevice来扫描设备
+      // 注意：Web Bluetooth API不支持主动扫描，只能通过用户交互触发设备选择
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [
+          { namePrefix: this.devicePrefix },
+          { services: [BLUFI_SERVICE_UUID] }
+        ],
+        optionalServices: [BLUFI_SERVICE_UUID]
+      });
+      
+      // 格式化设备信息以匹配微信小程序的格式
+      const formattedDevice = {
+        deviceId: device.id,
+        name: device.name,
+        RSSI: 0, // Web Bluetooth API不提供RSSI信息
+        advertisData: {},
+        advertisServiceUUIDs: device.uuids || [],
+        localName: device.name,
+        serviceData: {},
+        _rawDevice: device // 保存原始设备对象
+      };
+      
+      this.logger.log('扫描到的设备:', formattedDevice);
+      
+      // 如果提供了回调函数，立即调用
+      if (onDeviceFound) {
+        onDeviceFound(formattedDevice);
+      }
+      
+      return [formattedDevice];
+    } catch (error) {
+      this.logger.warn('扫描设备失败:', error);
+      throw error;
+    }
+  }
+
+  /**
    * 连接到BluFi设备
    * @param {String} deviceId - 设备ID
    */
   async connect(deviceId) {
+    if (this.isWeChat) {
+      return this._connectWeChat(deviceId);
+    } else if (this.isBrowser) {
+      return this._connectBrowser(deviceId);
+    }
+    throw new Error('不支持的运行环境');
+  }
+
+  /**
+   * 微信小程序环境连接设备
+   * @private
+   */
+  async _connectWeChat(deviceId) {
     try {
       this.deviceId = deviceId;
       
@@ -238,7 +344,7 @@ class BluFi {
       this.logger.log('获取服务列表:', servicesRes.services);
       
       // 查找BluFi服务
-      const service = servicesRes.services.find(s => s.uuid.toUpperCase() === BLUFI_SERVICE_UUID);
+      const service = servicesRes.services.find(s => s.uuid.toUpperCase() === BLUFI_SERVICE_UUID.toUpperCase());
       if (!service) {
         throw new Error('未找到BluFi服务');
       }
@@ -252,8 +358,8 @@ class BluFi {
       this.logger.log('获取特征值列表:', charsRes.characteristics);
       
       // 查找写特征值和通知特征值
-      const writeChar = charsRes.characteristics.find(c => c.uuid.toUpperCase() === BLUFI_CHAR_WRITE_UUID);
-      const notifyChar = charsRes.characteristics.find(c => c.uuid.toUpperCase() === BLUFI_CHAR_NOTIFY_UUID);
+      const writeChar = charsRes.characteristics.find(c => c.uuid.toUpperCase() === BLUFI_CHAR_WRITE_UUID.toUpperCase());
+      const notifyChar = charsRes.characteristics.find(c => c.uuid.toUpperCase() === BLUFI_CHAR_NOTIFY_UUID.toUpperCase());
       
       if (!writeChar || !notifyChar) {
         throw new Error('未找到必要的BluFi特征值');
@@ -261,6 +367,63 @@ class BluFi {
       
       this.writeCharId = writeChar.uuid;
       this.notifyCharId = notifyChar.uuid;
+      this.sequence = -1; // 初始化序列号
+      
+      // 启用通知
+      await this._enableNotify();
+      
+      // 初始化安全连接
+      await this._initSecurity();
+
+      this.connected = true;
+      return true;
+    } catch (error) {
+      this.logger.warn('连接设备失败:', error);
+      this.disconnect();
+      throw error;
+    }
+  }
+
+  /**
+   * 浏览器环境连接设备
+   * @private
+   */
+  async _connectBrowser(deviceId) {
+    try {
+      // 在浏览器环境中，deviceId实际上是设备对象或设备ID
+      let device;
+      if (typeof deviceId === 'string') {
+        // 如果是字符串ID，需要重新请求设备
+        device = await navigator.bluetooth.requestDevice({
+          filters: [
+            { namePrefix: this.devicePrefix },
+            { services: [BLUFI_SERVICE_UUID] }
+          ],
+          optionalServices: [BLUFI_SERVICE_UUID]
+        });
+      } else if (deviceId._rawDevice) {
+        // 如果是格式化的设备对象，获取原始设备
+        device = deviceId._rawDevice;
+      } else {
+        device = deviceId;
+      }
+      
+      this.bluetoothDevice = device;
+      this.deviceId = device.id;
+      
+      // 连接到GATT服务器
+      this.gattServer = await device.gatt.connect();
+      this.logger.log('GATT服务器连接成功');
+      
+      // 获取BluFi服务
+      this.service = await this.gattServer.getPrimaryService(BLUFI_SERVICE_UUID);
+      this.logger.log('获取BluFi服务成功');
+      
+      // 获取特征值
+      this.writeCharacteristic = await this.service.getCharacteristic(BLUFI_CHAR_WRITE_UUID);
+      this.notifyCharacteristic = await this.service.getCharacteristic(BLUFI_CHAR_NOTIFY_UUID);
+      this.logger.log('获取特征值成功');
+      
       this.sequence = -1; // 初始化序列号
       
       // 启用通知
@@ -309,6 +472,18 @@ async _initSecurity() {
    * 断开连接
    */
   async disconnect() {
+    if (this.isWeChat) {
+      return this._disconnectWeChat();
+    } else if (this.isBrowser) {
+      return this._disconnectBrowser();
+    }
+  }
+
+  /**
+   * 微信小程序环境断开连接
+   * @private
+   */
+  async _disconnectWeChat() {
     if (this.deviceId) {
       try {
         if (this.isNotifying) {
@@ -326,16 +501,59 @@ async _initSecurity() {
       } catch (error) {
         this.logger.warn('断开连接失败:', error);
       } finally {
-        this.deviceId = null;
-        this.serviceId = null;
-        this.writeCharId = null;
-        this.notifyCharId = null;
-        this.connected = false;
-        this.isEncrypted = false;
-        this.sharedSecret = null;
-        this.devicePublicKey = null;
+        this._resetConnection();
       }
     }
+  }
+
+  /**
+   * 浏览器环境断开连接
+   * @private
+   */
+  async _disconnectBrowser() {
+    try {
+      if (this.notifyCharacteristic && this.isNotifying) {
+        // 停止通知
+        await this.notifyCharacteristic.stopNotifications();
+        this.isNotifying = false;
+      }
+      
+      if (this.gattServer && this.gattServer.connected) {
+        // 断开GATT连接
+        this.gattServer.disconnect();
+        this.logger.log('设备已断开连接');
+      }
+    } catch (error) {
+      this.logger.warn('断开连接失败:', error);
+    } finally {
+      this._resetConnection();
+    }
+  }
+
+  /**
+   * 重置连接状态
+   * @private
+   */
+  _resetConnection() {
+    this.connected = false;
+    this.deviceId = null;
+    this.sequence = -1;
+    this.isEncrypted = false;
+    this.sharedSecret = null;
+    this.devicePublicKey = null;
+    
+    // 微信小程序相关
+    this.serviceId = null;
+    this.writeCharId = null;
+    this.notifyCharId = null;
+    
+    // 浏览器相关
+    this.bluetoothDevice = null;
+    this.gattServer = null;
+    this.service = null;
+    this.writeCharacteristic = null;
+    this.notifyCharacteristic = null;
+    this.isNotifying = false;
   }
 
   /**
@@ -481,7 +699,23 @@ async _initSecurity() {
    * @private
    */
   async _enableNotify() {
+    if (this.isWeChat) {
+      return this._enableNotifyWeChat();
+    } else if (this.isBrowser) {
+      return this._enableNotifyBrowser();
+    }
+    throw new Error('不支持的运行环境');
+  }
+
+  /**
+   * 微信小程序环境启用通知
+   * @private
+   */
+  async _enableNotifyWeChat() {
     try {
+      // 监听特征值变化
+      wx.onBLECharacteristicValueChange(this._onCharacteristicValueChange.bind(this));
+      
       // 启用通知
       await this._promisify(wx.notifyBLECharacteristicValueChange, {
         deviceId: this.deviceId,
@@ -493,8 +727,40 @@ async _initSecurity() {
       this.isNotifying = true;
       this.logger.log('通知已启用');
       
+      return true;
+    } catch (error) {
+      this.logger.warn('启用通知失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 浏览器环境启用通知
+   * @private
+   */
+  async _enableNotifyBrowser() {
+    try {
       // 监听特征值变化
-      wx.onBLECharacteristicValueChange(this._onCharacteristicValueChange.bind(this));
+      this.notifyCharacteristic.addEventListener('characteristicvaluechanged', (event) => {
+        const value = event.target.value;
+        const arrayBuffer = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+        
+        // 转换为微信小程序格式的事件对象
+        const wxEvent = {
+          deviceId: this.deviceId,
+          serviceId: BLUFI_SERVICE_UUID,
+          characteristicId: BLUFI_CHAR_NOTIFY_UUID,
+          value: arrayBuffer
+        };
+        
+        this._onCharacteristicValueChange(wxEvent);
+      });
+      
+      // 启用通知
+      await this.notifyCharacteristic.startNotifications();
+      
+      this.isNotifying = true;
+      this.logger.log('通知已启用');
       
       return true;
     } catch (error) {
@@ -508,12 +774,20 @@ async _initSecurity() {
    * @private
    */
   _onCharacteristicValueChange(res) {
-    if (res.characteristicId.toUpperCase() === this.notifyCharId.toUpperCase()) {
-      const data = new Uint8Array(res.value);
-      this.logger.log('收到数据:', this._arrayBufferToHex(res.value));
-      
-      this._parseResponse(data);
+    // 在微信小程序环境中检查特征值ID
+    if (this.isWeChat && res.characteristicId.toUpperCase() !== this.notifyCharId.toUpperCase()) {
+      return;
     }
+    
+    // 在浏览器环境中检查特征值ID
+    if (this.isBrowser && res.characteristicId.toUpperCase() !== BLUFI_CHAR_NOTIFY_UUID.toUpperCase()) {
+      return;
+    }
+    
+    const data = new Uint8Array(res.value);
+    this.logger.log('收到数据:', this._arrayBufferToHex(res.value));
+    
+    this._parseResponse(data);
   }
 
   /**
@@ -1157,10 +1431,19 @@ async _initSecurity() {
    * @private
    */
   async _writeData(data) {
-    // if (!this.connected) {
-    //   throw new Error('设备未连接');
-    // }
-    
+    if (this.isWeChat) {
+      return this._writeDataWeChat(data);
+    } else if (this.isBrowser) {
+      return this._writeDataBrowser(data);
+    }
+    throw new Error('不支持的运行环境');
+  }
+
+  /**
+   * 微信小程序环境写入数据
+   * @private
+   */
+  async _writeDataWeChat(data) {
     try {
       await this._promisify(wx.writeBLECharacteristicValue, {
         deviceId: this.deviceId,
@@ -1178,10 +1461,29 @@ async _initSecurity() {
   }
 
   /**
+   * 浏览器环境写入数据
+   * @private
+   */
+  async _writeDataBrowser(data) {
+    try {
+      await this.writeCharacteristic.writeValue(data);
+      this.logger.log('数据写入成功:', this._arrayBufferToHex(data.buffer));
+      return true;
+    } catch (error) {
+      this.logger.warn('数据写入失败:', error);
+      throw error;
+    }
+  }
+
+  /**
    * 将微信API转换为Promise
    * @private
    */
   _promisify(fn, params = {}) {
+    if (!this.isWeChat) {
+      throw new Error('_promisify方法仅在微信小程序环境中可用');
+    }
+    
     return new Promise((resolve, reject) => {
       fn({
         ...params,
@@ -1313,12 +1615,25 @@ async _initSecurity() {
     ).join(' ');
   }
 }
-module.exports = {
-  BluFi,
-  WIFI_MODE,
-  FRAME_TYPE,
-  CTRL_SUBTYPE,
-  DATA_SUBTYPE,
-  SEC_MODE,
-  STATION_CONNECT_STATUS
-};
+// 兼容不同环境的导出方式
+if (typeof module !== 'undefined' && module.exports) {
+  // Node.js 或微信小程序环境
+  module.exports = {
+    BluFi,
+    WIFI_MODE,
+    FRAME_TYPE,
+    CTRL_SUBTYPE,
+    DATA_SUBTYPE,
+    SEC_MODE,
+    STATION_CONNECT_STATUS
+  };
+} else if (typeof window !== 'undefined') {
+  // 浏览器环境，将类和常量挂载到全局对象
+  window.BluFi = BluFi;
+  window.WIFI_MODE = WIFI_MODE;
+  window.FRAME_TYPE = FRAME_TYPE;
+  window.CTRL_SUBTYPE = CTRL_SUBTYPE;
+  window.DATA_SUBTYPE = DATA_SUBTYPE;
+  window.SEC_MODE = SEC_MODE;
+  window.STATION_CONNECT_STATUS = STATION_CONNECT_STATUS;
+}

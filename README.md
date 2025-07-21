@@ -1,5 +1,5 @@
 # DOIT BluFi.js SDK
-DOIT BluFi.js SDK 是一个基于 JavaScript 的 SDK，用于在微信小程序、Chrome浏览器（待实现）环境中为乐鑫BluFi设备配网。
+DOIT BluFi.js SDK 是一个基于 JavaScript 的 SDK，用于在微信小程序、Chrome浏览器环境中为乐鑫BluFi设备配网。
 
 乐鑫官方只提供了Android和iOS的SDK。基于微信小程序JavaScript的项目有[xuhongv/BlufiEsp32WeChat](https://github.com/xuhongv/BlufiEsp32WeChat)和[weijian.kang/esp-blufi-for-wx](https://gitee.com/weijian.kang/esp-blufi-for-wx) ，感谢两位大神。但项目久未维护，实际使用中存在一些问题。便与AI大模型合作开发了本项目。
 
@@ -10,6 +10,7 @@ DOIT BluFi.js SDK 是一个基于 JavaScript 的 SDK，用于在微信小程序�
 * 使用async/await语法
 * 除了常规的英文和数字WiFi SSID外，还支持支持中文、Emoji字符的SSID配网
 * 支持微信小程序
+* 支持Chrome浏览器（基于Web Bluetooth API）
 * 支持BluFi非加密非校验、非加密校验两种数据传输
 * 支持自定义BLE名称前缀
 * 支持读取设备端WIFI列表
@@ -21,7 +22,6 @@ DOIT BluFi.js SDK 是一个基于 JavaScript 的 SDK，用于在微信小程序�
 
 ## 待实现功能
 * 支持加密数据传输
-* 支持Chrome浏览器
 
 ## 使用方法
 
@@ -29,6 +29,21 @@ DOIT BluFi.js SDK 是一个基于 JavaScript 的 SDK，用于在微信小程序�
 参考`wx-example`项目，在`微信开发者工具`中导入项目并运行。 
 微信搜索"Frossky"或扫码可以演示配网功能。
 ![](docs/xcx_code.jpg)
+
+### Chrome浏览器
+参考`h5-example`项目：
+
+1. 确保使用支持Web Bluetooth API的浏览器（Chrome 56+或Edge 79+）
+2. 运行启动脚本：
+   - Windows: 双击 `h5-example/start-server.bat`
+   - Linux/Mac: 运行 `bash h5-example/start-server.sh`
+3. 在浏览器中访问 `http://localhost:8000/h5-example/`
+4. 注意: Web Bluetooth API需要HTTPS环境（本地开发可使用localhost）
+
+**注意事项：**
+- Web Bluetooth API需要HTTPS环境（本地开发可使用localhost）
+- 需要用户手动授权蓝牙权限
+- 设备扫描需要用户交互触发
 
 ### 设备端
 设备端可使用乐鑫官方支持BluFi的模组和和支持Blufi的AT固件。包括：

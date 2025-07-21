@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 BluFi 配网 - H5版本</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">ESP32 BluFi 配网</h1>
+            <p class="subtitle">Chrome浏览器版本</p>
+        </div>
+
+        <!-- BluFi设置部分 -->
+        <div class="section">
+            <h2 class="section-title">BluFi设置</h2>
+            <div class="form-group">
+                <div class="form-item">
+                    <label class="label">设备名称前缀</label>
+                    <input type="text" id="prefix" class="input" placeholder="请输入BLE设备名前缀" value="BLUFI_DEVICE">
+                </div>
+                <div class="form-item">
+                    <label class="label">扫描WiFi超时(毫秒)</label>
+                    <input type="number" id="scanWifiTimeout" class="input" placeholder="请输入扫描WiFi超时时长" value="10000">
+                </div>
+                <div class="form-item">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="enableChecksum" checked>
+                        <span class="checkmark"></span>
+                        启用CRC16校验
+                    </label>
+                </div>
+            </div>
+            <button id="initBluFi" class="btn primary">初始化BluFi</button>
+        </div>
+
+        <!-- 设备连接部分 -->
+        <div class="section">
+            <h2 class="section-title">设备连接</h2>
+            <div class="button-group">
+                <button id="scanDevices" class="btn" disabled>扫描设备</button>
+                <button id="disconnectDevice" class="btn" disabled>断开连接</button>
+            </div>
+        </div>
+
+        <!-- 设备列表 -->
+        <div id="deviceList" class="device-list" style="display: none;">
+            <h3 class="list-title">可用设备</h3>
+            <div id="devices"></div>
+        </div>
+
+        <!-- WiFi配置部分 -->
+        <div id="wifiSection" class="section" style="display: none;">
+            <h2 class="section-title">WiFi 配置</h2>
+            <button id="scanWifi" class="btn">扫描 WiFi</button>
+
+            <!-- WiFi列表 -->
+            <div id="wifiList" class="wifi-list" style="display: none;">
+                <h3 class="list-title">可用 WiFi</h3>
+                <div id="wifiNetworks"></div>
+            </div>
+
+            <!-- WiFi配置表单 -->
+            <form id="wifiForm" class="form-group">
+                <div class="form-item">
+                    <label class="label">WiFi 名称</label>
+                    <div class="input-wrapper">
+                        <input type="text" id="ssid" class="input" placeholder="请选择 WiFi" readonly>
+                        <button type="button" id="showWifiList" class="btn-small">选择</button>
+                    </div>
+                </div>
+                <div class="form-item">
+                    <label class="label">WiFi 密码</label>
+                    <div class="input-wrapper">
+                        <input type="password" id="password" class="input" placeholder="请输入 WiFi 密码">
+                        <button type="button" id="togglePassword" class="btn-small">显示</button>
+                    </div>
+                </div>
+                <button type="submit" class="btn primary submit-btn">配置 WiFi</button>
+            </form>
+
+            <!-- 自定义数据发送部分 -->
+            <h3 class="section-title">发送自定义数据</h3>
+            <form id="customDataForm" class="form-group">
+                <div class="form-item">
+                    <label class="label">自定义数据</label>
+                    <input type="text" id="customData" class="input" placeholder="请输入要发送的数据">
+                </div>
+                <button type="submit" class="btn primary">发送数据</button>
+            </form>
+
+            <!-- 自定义数据接收部分 -->
+            <h3 class="section-title">接收自定义数据</h3>
+            <div id="receivedData" class="received-data">
+                <div class="form-item">
+                    <label class="label">接收到的数据:</label>
+                    <div id="receivedCustomData" class="received-text">暂无数据</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 连接状态提示 -->
+        <div class="status-bar">
+            <span id="statusText" class="status-text">未连接</span>
+        </div>
+    </div>
+
+    <!-- 日志窗口 -->
+    <div id="logWindow" class="log-window" style="display: none;">
+        <div class="log-header">
+            <h3>LOG(时间逆序)</h3>
+            <button id="closeLog" class="btn-close">×</button>
+        </div>
+        <div id="logContent" class="log-content"></div>
+    </div>
+    <button id="showLog" class="log-button">LOG</button>
+
+    <script src="../src/blufi.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
