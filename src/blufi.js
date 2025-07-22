@@ -392,7 +392,16 @@ class BluFi {
     try {
       // 在浏览器环境中，deviceId实际上是设备对象或设备ID
       let device;
-      if (typeof deviceId === 'string') {
+      if (!deviceId) {
+        // 如果没有传递deviceId，直接请求设备选择
+        device = await navigator.bluetooth.requestDevice({
+          filters: [
+            { namePrefix: this.devicePrefix },
+            { services: [BLUFI_SERVICE_UUID] }
+          ],
+          optionalServices: [BLUFI_SERVICE_UUID]
+        });
+      } else if (typeof deviceId === 'string') {
         // 如果是字符串ID，需要重新请求设备
         device = await navigator.bluetooth.requestDevice({
           filters: [

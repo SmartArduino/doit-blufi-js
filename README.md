@@ -38,7 +38,6 @@ DOIT BluFi.js SDK 是一个基于 JavaScript 的 SDK，用于在微信小程序�
    - Windows: 双击 `h5-example/start-server.bat`
    - Linux/Mac: 运行 `bash h5-example/start-server.sh`
 3. 在浏览器中访问 `http://localhost:8000/h5-example/`
-4. 注意: Web Bluetooth API需要HTTPS环境（本地开发可使用localhost）
 
 **注意事项：**
 - Web Bluetooth API需要HTTPS环境（本地开发可使用localhost）

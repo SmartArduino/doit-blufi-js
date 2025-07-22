@@ -16,6 +16,17 @@ class BluFiApp {
         this.initElements();
         this.bindEvents();
         this.loadSettings();
+        
+        // 检查关键元素是否存在
+        const criticalElements = ['initBluFi', 'connectDevice', 'disconnectDevice', 'statusText'];
+        for (const elementName of criticalElements) {
+            if (!this.elements[elementName]) {
+                console.error(`关键元素 ${elementName} 未找到`);
+            }
+        }
+        
+        // 初始化UI状态
+        this.updateUI();
     }
 
     // 初始化DOM元素引用
@@ -28,14 +39,13 @@ class BluFiApp {
             initBluFi: document.getElementById('initBluFi'),
             
             // 设备连接相关
-            scanDevices: document.getElementById('scanDevices'),
+            connectDevice: document.getElementById('connectDevice'),
             disconnectDevice: document.getElementById('disconnectDevice'),
-            deviceList: document.getElementById('deviceList'),
-            devices: document.getElementById('devices'),
             
-            // WiFi配置相关
+            // WiFi相关
             wifiSection: document.getElementById('wifiSection'),
             scanWifi: document.getElementById('scanWifi'),
+            wifiScanLoading: document.getElementById('wifiScanLoading'),
             wifiList: document.getElementById('wifiList'),
             wifiNetworks: document.getElementById('wifiNetworks'),
             wifiForm: document.getElementById('wifiForm'),
@@ -67,7 +77,7 @@ class BluFiApp {
         this.elements.initBluFi.addEventListener('click', () => this.initBluFi());
         
         // 设备连接相关事件
-        this.elements.scanDevices.addEventListener('click', () => this.scanDevices());
+        this.elements.connectDevice.addEventListener('click', () => this.connectDevice());
         this.elements.disconnectDevice.addEventListener('click', () => this.disconnectDevice());
         
         // WiFi配置相关事件
@@ -143,24 +153,12 @@ class BluFiApp {
         }
     }
 
-    // 扫描设备
-    async scanDevices() {
-        try {
-            this.addLog('log', '开始扫描设备...');
-            this.devices = await this.blufi.scanDevices();
-            this.addLog('log', `扫描到 ${this.devices.length} 个设备`);
-            this.renderDevices();
-        } catch (error) {
-            this.addLog('warn', `扫描设备失败: ${error.message}`);
-            alert(`扫描失败: ${error.message}`);
-        }
-    }
-
     // 连接设备
-    async connectDevice(deviceId) {
+    async connectDevice() {
         try {
-            this.addLog('log', `正在连接设备: ${deviceId}`);
-            await this.blufi.connect(deviceId);
+            this.addLog('log', '正在连接设备...');
+            // 直接调用connect方法，浏览器会弹出设备选择对话框
+            await this.blufi.connect();
             this.connected = true;
             this.addLog('log', '设备连接成功');
             this.updateUI();
@@ -188,6 +186,11 @@ class BluFiApp {
     // 扫描WiFi
     async scanWifi() {
         try {
+            // 显示加载提示
+            if (this.elements.wifiScanLoading) {
+                this.elements.wifiScanLoading.style.display = 'flex';
+            }
+            
             this.addLog('log', '开始扫描WiFi...');
             this.wifiList = await this.blufi.scanWifi();
             this.addLog('log', `扫描到 ${this.wifiList.length} 个WiFi网络`);
@@ -195,6 +198,11 @@ class BluFiApp {
         } catch (error) {
             this.addLog('warn', `扫描WiFi失败: ${error.message}`);
             alert(`WiFi扫描失败: ${error.message}`);
+        } finally {
+            // 隐藏加载提示
+            if (this.elements.wifiScanLoading) {
+                this.elements.wifiScanLoading.style.display = 'none';
+            }
         }
     }
 
@@ -326,29 +334,6 @@ class BluFiApp {
         }
     }
 
-    // 渲染设备列表
-    renderDevices() {
-        if (this.devices.length === 0) {
-            this.elements.deviceList.style.display = 'none';
-            return;
-        }
-
-        this.elements.deviceList.style.display = 'block';
-        this.elements.devices.innerHTML = '';
-
-        this.devices.forEach(device => {
-            const deviceElement = document.createElement('div');
-            deviceElement.className = 'device-item';
-            deviceElement.innerHTML = `
-                <div class="device-name">${device.name || '未命名设备'}</div>
-                <div class="device-id">ID: ${device.deviceId}</div>
-                <div class="device-rssi">信号强度: ${device.RSSI || 'N/A'} dBm</div>
-            `;
-            deviceElement.addEventListener('click', () => this.connectDevice(device.deviceId || device));
-            this.elements.devices.appendChild(deviceElement);
-        });
-    }
-
     // 渲染WiFi列表
     renderWifiList() {
         if (this.wifiList.length === 0) {
@@ -384,21 +369,31 @@ class BluFiApp {
 
     // 更新UI状态
     updateUI() {
-        // 更新按钮状态
-        this.elements.initBluFi.disabled = this.blufiInitialized;
-        this.elements.scanDevices.disabled = !this.bluetoothReady || this.connected || !this.blufiInitialized;
-        this.elements.disconnectDevice.disabled = !this.connected;
-
-        // 更新设备列表显示
-        if (this.connected) {
-            this.elements.deviceList.style.display = 'none';
+        // 更新按钮状态 - 添加元素存在性检查
+        if (this.elements.initBluFi) {
+            this.elements.initBluFi.disabled = this.blufiInitialized;
+        }
+        if (this.elements.connectDevice) {
+            this.elements.connectDevice.disabled = !this.bluetoothReady || this.connected || !this.blufiInitialized;
+        }
+        if (this.elements.disconnectDevice) {
+            this.elements.disconnectDevice.disabled = !this.connected;
         }
 
         // 更新WiFi配置区域显示
-        this.elements.wifiSection.style.display = this.connected ? 'block' : 'none';
+        if (this.elements.wifiSection) {
+            this.elements.wifiSection.style.display = this.connected ? 'block' : 'none';
+        }
+
+        // 初始化WiFi扫描加载提示为隐藏状态
+        if (this.elements.wifiScanLoading) {
+            this.elements.wifiScanLoading.style.display = 'none';
+        }
 
         // 更新状态文本
-        this.elements.statusText.textContent = this.connected ? '已连接' : '未连接';
+        if (this.elements.statusText) {
+            this.elements.statusText.textContent = this.connected ? '已连接' : '未连接';
+        }
     }
 }
 

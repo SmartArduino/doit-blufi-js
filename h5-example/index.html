@@ -40,24 +40,25 @@
         <div class="section">
             <h2 class="section-title">设备连接</h2>
             <div class="button-group">
-                <button id="scanDevices" class="btn" disabled>扫描设备</button>
+                <button id="connectDevice" class="btn" disabled>连接设备</button>
                 <button id="disconnectDevice" class="btn" disabled>断开连接</button>
             </div>
-        </div>
-
-        <!-- 设备列表 -->
-        <div id="deviceList" class="device-list" style="display: none;">
-            <h3 class="list-title">可用设备</h3>
-            <div id="devices"></div>
+            <p class="help-text">点击"连接设备"按钮，浏览器将弹出设备选择对话框</p>
         </div>
 
         <!-- WiFi配置部分 -->
         <div id="wifiSection" class="section" style="display: none;">
             <h2 class="section-title">WiFi 配置</h2>
-            <button id="scanWifi" class="btn">扫描 WiFi</button>
+            <div class="scan-wifi-container">
+                <button id="scanWifi" class="btn">扫描 WiFi</button>
+                <div id="wifiScanLoading" class="scan-loading" style="display: none;">
+                    <span class="loading-spinner"></span>
+                    <span class="loading-text">正在扫描WiFi...</span>
+                </div>
+            </div>
 
             <!-- WiFi列表 -->
-            <div id="wifiList" class="wifi-list" style="display: none;">
+            <div id="wifiList" class="wifi-list">
                 <h3 class="list-title">可用 WiFi</h3>
                 <div id="wifiNetworks"></div>
             </div>
