@@ -1,5 +1,5 @@
 .vscode/
-
+.qoder/
 # Logs
 logs
 *.log

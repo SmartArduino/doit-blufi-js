@@ -6,8 +6,8 @@
  */
 
 // 环境检测
-const isWeChat = typeof wx !== 'undefined' && wx.openBluetoothAdapter;
-const isBrowser = typeof navigator !== 'undefined' && navigator.bluetooth;
+const isWeChat = (typeof wx) !== 'undefined' && (typeof wx.openBluetoothAdapter) !== 'undefined';
+const isBrowser = !isWeChat && (typeof navigator) !== 'undefined' && (typeof navigator.bluetooth) !== 'undefined';
 
 // 常量定义
 const BLUFI_SERVICE_UUID = '0000ffff-0000-1000-8000-00805f9b34fb';
@@ -467,6 +467,7 @@ async _initSecurity() {
     }
     
     // 设置安全模式
+    this.logger.log('调用 _sendCtrlFrame: SET_SEC_MODE', secMode);
     await this._sendCtrlFrame(CTRL_SUBTYPE.SET_SEC_MODE, new Uint8Array([secMode]));
     
     return true;
@@ -563,6 +564,15 @@ async _initSecurity() {
     this.writeCharacteristic = null;
     this.notifyCharacteristic = null;
     this.isNotifying = false;
+    
+    // 清除分片缓存和计时器
+    if (this.fragmentCache) {
+      for (const cacheKey in this.fragmentCache) {
+        this._clearFragmentTimeout(cacheKey);
+      }
+      this.fragmentCache = null;
+    }
+    this.logger.log('已重置连接状态');
   }
 
   /**
@@ -579,19 +589,23 @@ async _initSecurity() {
     
     try {
       // 设置操作模式
+      this.logger.log('调用 _sendCtrlFrame: SET_OP_MODE', config.mode || WIFI_MODE.STATION);
       await this._sendCtrlFrame(CTRL_SUBTYPE.SET_OP_MODE, new Uint8Array([config.mode || WIFI_MODE.STATION]));
       
       // 发送SSID
       const ssidData = this._stringToUint8Array(config.ssid);
+      this.logger.log('调用 _sendDataFrame: WIFI_SSID', ssidData);
       await this._sendDataFrame(DATA_SUBTYPE.WIFI_SSID, ssidData);
       
       // 发送密码
       if (config.password) {
         const passwordData = this._stringToUint8Array(config.password);
+        this.logger.log('调用 _sendDataFrame: WIFI_PASSWORD', passwordData);
         await this._sendDataFrame(DATA_SUBTYPE.WIFI_PASSWORD, passwordData);
       }
       
       // 连接WiFi
+      this.logger.log('调用 _sendCtrlFrame: CONNECT_WIFI');
       await this._sendCtrlFrame(CTRL_SUBTYPE.CONNECT_WIFI, new Uint8Array([]));
       
       return true;
@@ -618,6 +632,7 @@ async _initSecurity() {
         };
         
         // 发送获取WiFi状态请求
+        this.logger.log('调用 _sendCtrlFrame: GET_WIFI_STATUS');
         this._sendCtrlFrame(CTRL_SUBTYPE.GET_WIFI_STATUS, new Uint8Array([]))
           .catch(err => {
             delete this.callbacks._wifiStatus;
@@ -658,6 +673,7 @@ async _initSecurity() {
         };
         
         // 发送扫描请求
+        this.logger.log('调用 _sendCtrlFrame: GET_WIFI_LIST');
         this._sendCtrlFrame(CTRL_SUBTYPE.GET_WIFI_LIST, new Uint8Array([]))
           .catch(err => {
             delete this.callbacks.onWifiListReceived;
@@ -695,6 +711,7 @@ async _initSecurity() {
     }
     
     try {
+      this.logger.log('调用 _sendDataFrame: CUSTOM_DATA', data);
       await this._sendDataFrame(DATA_SUBTYPE.CUSTOM_DATA, data);
       return true;
     } catch (error) {
@@ -893,6 +910,8 @@ async _initSecurity() {
         // 复制第一个分片的数据
         this.fragmentCache[cacheKey].data.set(fragmentData, 0);
         this.logger.log(`接收第一个分片数据: ${fragmentData.length}/${totalLen}`);
+        // 启动超时计时器
+        this._startFragmentTimeout(cacheKey);
       } 
       // 处理中间分片或最后一个分片
       else if (this.fragmentCache[cacheKey]) {
@@ -914,15 +933,19 @@ async _initSecurity() {
         
         this.logger.log(`接收分片数据: ${cache.receivedLen}/${cache.totalLen}`);
         
+        // 重启超时计时器
+        this._restartFragmentTimeout(cacheKey);
+        
         // 检查是否接收完所有分片
         if (cache.receivedLen >= cache.totalLen || !(frameCtrl & FRAME_CTRL_FRAG)) {
-          this.logger.log(`所有分片数据接收完毕，总长度: ${cache.totalLen}`);
+          this.logger.log(`所有分片数据接收完毕，总长度: ${cache.receivedLen}/${cache.totalLen}, 控制位: ${frameCtrl & FRAME_CTRL_FRAG}`);
           
           // 处理完整的数据
           const completeData = cache.data.slice(0, cache.totalLen);
           this._processFrame(cache.frameType, cache.frameSubType, completeData);
           
-          // 清除缓存
+          // 清除缓存和计时器
+          this._clearFragmentTimeout(cacheKey);
           delete this.fragmentCache[cacheKey];
         }
       } 
@@ -980,6 +1003,91 @@ async _initSecurity() {
             this.callbacks.onWifiStatusChange(statusInfo);
           }
           break;
+        case DATA_SUBTYPE.WIFI_BSSID:
+          const bssid = this._parseBssidData(payload);
+          this.logger.log('WiFi BSSID:', bssid);
+          break;
+        case DATA_SUBTYPE.WIFI_PASSWORD:
+          const password = this.constructor.uint8ArrayToString(payload);
+          this.logger.log('WiFi密码:', password);
+          break;
+        case DATA_SUBTYPE.SOFTAP_SSID:
+          const softapSsid = this.constructor.uint8ArrayToString(payload);
+          this.logger.log('SoftAP SSID:', softapSsid);
+          break;
+        case DATA_SUBTYPE.SOFTAP_PASSWORD:
+          const softapPassword = this.constructor.uint8ArrayToString(payload);
+          this.logger.log('SoftAP密码:', softapPassword);
+          break;
+        case DATA_SUBTYPE.SOFTAP_MAX_CONN_NUM:
+          const maxConnNum = payload[0];
+          this.logger.log('SoftAP最大连接数:', maxConnNum);
+          break;
+        case DATA_SUBTYPE.SOFTAP_AUTH_MODE:
+          const authMode = payload[0];
+          this.logger.log('SoftAP认证模式:', authMode);
+          break;
+        case DATA_SUBTYPE.SOFTAP_CHANNEL:
+          const channel = payload[0];
+          this.logger.log('SoftAP通道数量:', channel);
+          break;
+        case DATA_SUBTYPE.USERNAME:
+          const username = this.constructor.uint8ArrayToString(payload);
+          this.logger.log('用户名:', username);
+          break;
+        case DATA_SUBTYPE.CA_CERTIFICATION:
+          this.logger.log('CA认证数据:', payload);
+          break;
+        case DATA_SUBTYPE.CLIENT_CERTIFICATION:
+          this.logger.log('客户端认证数据:', payload);
+          break;
+        case DATA_SUBTYPE.SERVER_CERTIFICATION:
+          this.logger.log('服务端认证数据:', payload);
+          break;
+        case DATA_SUBTYPE.CLIENT_PRIVATE_KEY:
+          this.logger.log('客户端私钥数据:', payload);
+          break;
+        case DATA_SUBTYPE.SERVER_PRIVATE_KEY:
+          this.logger.log('服务端私钥数据:', payload);
+          break;
+        case DATA_SUBTYPE.VERSION:
+          if (payload.length >= 2) {
+            const majorVersion = payload[0];
+            const minorVersion = payload[1];
+            this.logger.log('版本信息:', `${majorVersion}.${minorVersion}`);
+          }
+          break;
+        case DATA_SUBTYPE.ERROR:
+          const errorCode = payload[0];
+          const errorMessages = {
+            0x00: 'sequence error',
+            0x01: 'checksum error',
+            0x02: 'decrypt error',
+            0x03: 'encrypt error',
+            0x04: 'init security error',
+            0x05: 'dh malloc error',
+            0x06: 'dh param error',
+            0x07: 'read param error',
+            0x08: 'make public error',
+            0x09: 'data format error',
+            0x0a: 'calculate MD5 error',
+            0x0b: 'Wi-Fi scan error'
+          };
+          const errorMsg = errorMessages[errorCode] || `未知错误 (${errorCode})`;
+          this.logger.log('错误报告:', errorMsg);
+          break;
+        case DATA_SUBTYPE.MAX_RECONNECT:
+          const maxReconnect = payload[0];
+          this.logger.log('最大Wi-Fi重连次数:', maxReconnect);
+          break;
+        case DATA_SUBTYPE.WIFI_ERROR_REASON:
+          const errorReason = payload[0];
+          this.logger.log('Wi-Fi连接失败原因:', errorReason);
+          break;
+        case DATA_SUBTYPE.WIFI_ERROR_RSSI:
+          const errorRssi = payload[0];
+          this.logger.log('Wi-Fi连接失败时的RSSI:', errorRssi);
+          break;
         default:
           this.logger.log('未处理的数据帧子类型:', frameSubType);
       }
@@ -990,6 +1098,70 @@ async _initSecurity() {
    * 解析WiFi列表数据
    * @private
    */
+  /**
+   * 启动分片超时计时器
+   * @private
+   */
+  _startFragmentTimeout(cacheKey) {
+    // 清除已存在的计时器
+    if (this.fragmentCache[cacheKey].timeoutId) {
+      clearTimeout(this.fragmentCache[cacheKey].timeoutId);
+    }
+    
+    // 启动新的计时器
+    this.fragmentCache[cacheKey].timeoutId = setTimeout(() => {
+      this._onFragmentTimeout(cacheKey);
+    }, 100); // 100ms超时
+  }
+  
+  /**
+   * 重启分片超时计时器
+   * @private
+   */
+  _restartFragmentTimeout(cacheKey) {
+    this._startFragmentTimeout(cacheKey);
+  }
+  
+  /**
+   * 清除分片超时计时器
+   * @private
+   */
+  _clearFragmentTimeout(cacheKey) {
+    if (this.fragmentCache[cacheKey] && this.fragmentCache[cacheKey].timeoutId) {
+      clearTimeout(this.fragmentCache[cacheKey].timeoutId);
+      delete this.fragmentCache[cacheKey].timeoutId;
+    }
+  }
+  
+  /**
+   * 分片超时处理
+   * @private
+   */
+  _onFragmentTimeout(cacheKey) {
+    // 检查缓存是否存在
+    if (!this.fragmentCache || !this.fragmentCache[cacheKey]) {
+      return;
+    }
+    
+    const cache = this.fragmentCache[cacheKey];
+    this.logger.warn(`分片数据接收超时: ${cache.receivedLen}/${cache.totalLen}`);
+    
+    // 尽可能处理已收到的数据
+    if (cache.receivedLen > 0) {
+      try {
+        // 处理已收到的部分数据
+        const partialData = cache.data.slice(0, cache.receivedLen);
+        this._processFrame(cache.frameType, cache.frameSubType, partialData);
+        this.logger.log(`已处理部分分片数据: ${cache.receivedLen} 字节`);
+      } catch (error) {
+        this.logger.warn('处理部分分片数据失败:', error);
+      }
+    }
+    
+    // 清除缓存
+    delete this.fragmentCache[cacheKey];
+  }
+
   _parseWifiListData(data) {
     try {
       let offset = 0;
@@ -1021,6 +1193,26 @@ async _initSecurity() {
     } catch (error) {
       this.logger.warn('解析WiFi列表数据失败:', error);
       return [];
+    }
+  }
+
+  /**
+   * 解析BSSID数据
+   * @private
+   */
+  _parseBssidData(data) {
+    try {
+      if (data.length < 6) return null;
+      
+      // BSSID是6字节的MAC地址
+      const bssid = Array.from(data.slice(0, 6))
+        .map(byte => byte.toString(16).padStart(2, '0'))
+        .join(':');
+      
+      return bssid;
+    } catch (error) {
+      this.logger.warn('解析BSSID数据失败:', error);
+      return null;
     }
   }
 
