@@ -78,9 +78,25 @@
           </view>            
 
         </view>
+        <!-- 添加最大重连次数输入框 由于在C2 BluFi固件上测试不生效故暂时屏蔽.设备LOG输出 BT_BTC: btc_blufi_protocol_handler Unkown Ctrl pkt 51 -->
+        <view class="form-item" style="display: none;">
+          <text class="label">最大重连次数（设备可能不支持）</text>
+          <view class="input-wrapper">
+            <input class="input" name="maxReconnect" type="number" value="{{maxReconnect}}" placeholder="请输入最大重连次数(默认3)" />
+          </view>
+        </view>
       </view>
       <button class="btn submit-btn" form-type="submit">配置 WiFi</button>
     </form>
+    
+    <!-- WiFi状态显示区域 -->
+    <view class="section-title" style="margin-top: 20px;">WiFi连接状态</view>
+    <view class="wifi-status">
+      <text>状态: {{wifiStatusText}}</text>
+      <view wx:if="{{wifiStatus}}" style="margin-top: 10px;">
+        <text wx:if="{{wifiStatus.ssid}}">SSID: {{wifiStatus.ssid}}</text>
+      </view>
+    </view>
     
     <!-- 自定义数据发送部分 -->
     <view class="section-title" style="margin-top: 20px;">发送自定义数据</view>

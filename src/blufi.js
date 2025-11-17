@@ -581,6 +581,7 @@ async _initSecurity() {
    * @param {String} config.ssid - WiFi SSID
    * @param {String} config.password - WiFi密码
    * @param {Number} config.mode - WiFi模式
+   * @param {Number} config.maxReconnect - 最大重连次数（可选）
    */
   async configureWifi(config) {
     if (!this.connected) {
@@ -591,6 +592,12 @@ async _initSecurity() {
       // 设置操作模式
       this.logger.log('调用 _sendCtrlFrame: SET_OP_MODE', config.mode || WIFI_MODE.STATION);
       await this._sendCtrlFrame(CTRL_SUBTYPE.SET_OP_MODE, new Uint8Array([config.mode || WIFI_MODE.STATION]));
+      
+      // 如果配置了最大重连次数，发送MAX_RECONNECT数据帧
+      if (config.maxReconnect !== undefined) {
+        this.logger.log('调用 _sendDataFrame: MAX_RECONNECT', config.maxReconnect);
+        await this._sendDataFrame(DATA_SUBTYPE.MAX_RECONNECT, new Uint8Array([config.maxReconnect]));
+      }
       
       // 发送SSID
       const ssidData = this._stringToUint8Array(config.ssid);
@@ -996,10 +1003,10 @@ async _initSecurity() {
           }
           break;
         case DATA_SUBTYPE.WIFI_CONNECTION_STATE:
-          this.logger.log('WiFi连接状态:', payload);
+          // 解析WiFi状态数据
+          const statusInfo = this._parseWifiStatusData(payload);
+          this.logger.log('WiFi连接状态:', statusInfo);
           if (this.callbacks.onWifiStatusChange) {
-            // 解析WiFi状态数据
-            const statusInfo = this._parseWifiStatusData(payload);
             this.callbacks.onWifiStatusChange(statusInfo);
           }
           break;

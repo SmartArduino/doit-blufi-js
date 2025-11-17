@@ -1,5 +1,5 @@
 // 在页面中引入BluFi模块
-const {BluFi, WIFI_MODE } = require("./blufi.js");
+const {BluFi, WIFI_MODE, STATION_CONNECT_STATUS } = require("./blufi.js");
 function getTime(d){
   return `${d.getHours().toString().padStart(2, 0)}:${d.getMinutes().toString().padStart(2, 0)}:${d.getSeconds().toString().padStart(2, 0)}`
 }
@@ -18,6 +18,11 @@ Page({
     scanWifiTimeout: 3000, // 扫描WiFi的超时时间
     log: [],
     isShowLog: false,
+    // 添加WiFi状态相关数据
+    wifiStatus: null,
+    wifiStatusText: '未知',
+    // 添加最大重连次数，默认为3
+    maxReconnect: 3,
   },
 
   // 添加以下方法
@@ -106,6 +111,36 @@ Page({
         })
         this.setData({receivedCustomData: this.data.receivedCustomData});
       },
+      // 添加WiFi状态变化回调
+      onWifiStatusChange: (statusInfo) => {
+        console.log('WiFi状态变化:', statusInfo);
+        // 解析WiFi状态信息
+        let statusText = '未知状态';
+        if (statusInfo) {
+          switch (statusInfo.staConnStatus) {
+            case STATION_CONNECT_STATUS.CONNECTED_AND_GOT_IP:
+              statusText = '已连接并获取IP';
+              break;
+            case STATION_CONNECT_STATUS.DISCONNECTED:
+              statusText = '已断开连接';
+              break;
+            case STATION_CONNECT_STATUS.CONNECTING:
+              statusText = '连接中...';
+              break;
+            case STATION_CONNECT_STATUS.CONNETED:
+              statusText = '已连接';
+              break;
+            default:
+              statusText = `未知状态 (${statusInfo.staConnStatus})`;
+          }
+        }
+        
+        // 更新数据
+        this.setData({
+          wifiStatus: statusInfo,
+          wifiStatusText: statusText
+        });
+      }
     });
     console.log('init BluFi', this.data.prefix, this.data.enableChecksum);
     // 初始化蓝牙
