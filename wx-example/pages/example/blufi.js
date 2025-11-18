@@ -1230,7 +1230,6 @@ async _initSecurity() {
   _parseWifiStatusData(data) {
     try {
       if (data.length < 3) return null;
-      console.log('_parseWifiStatusData', this._arrayBufferToHex)
       const opMode = data[0];
       const staConnStatus = data[1];
       const softApConnNum = data[2];
