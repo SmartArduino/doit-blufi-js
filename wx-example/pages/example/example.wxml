@@ -94,7 +94,9 @@
     <view class="wifi-status">
       <text>状态: {{wifiStatusText}}</text>
       <view wx:if="{{wifiStatus}}" style="margin-top: 10px;">
+        <text wx:if="{{wifiStatus.opModeText}}">Op Mode: {{wifiStatus.opModeText}}</text>
         <text wx:if="{{wifiStatus.ssid}}">SSID: {{wifiStatus.ssid}}</text>
+        <text wx:if="{{wifiStatus.bssid}}">BSSID: {{wifiStatus.bssid}}</text>
       </view>
     </view>
     

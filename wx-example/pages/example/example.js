@@ -133,6 +133,22 @@ Page({
             default:
               statusText = `未知状态 (${statusInfo.staConnStatus})`;
           }
+          switch(statusInfo.opMode) {
+            case WIFI_MODE.NULL:
+              statusInfo.opModeText = '空'
+              break
+            case WIFI_MODE.STATION:
+              statusInfo.opModeText = 'Station'
+              break
+            case WIFI_MODE.SOFTAP:
+              statusInfo.opModeText = 'SoftAP'
+              break
+            case WIFI_MODE.STATIONAP:
+              statusInfo.opModeText = 'Station & SoftAP'
+              break
+            default:
+              statusInfo.opModeText = '未知模式 ' + statusInfo.opMode
+          }
         }
         
         // 更新数据

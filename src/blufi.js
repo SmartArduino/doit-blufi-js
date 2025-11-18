@@ -1230,20 +1230,25 @@ async _initSecurity() {
   _parseWifiStatusData(data) {
     try {
       if (data.length < 3) return null;
-      
+      console.log('_parseWifiStatusData', this._arrayBufferToHex)
       const opMode = data[0];
       const staConnStatus = data[1];
       const softApConnNum = data[2];
       
-      let ssid = '';
-      if (data.length > 3) {
-        ssid = this.constructor.uint8ArrayToString(data.slice(3));
+      let ssid = '', bssid = '';
+      if (data.length > 10) {
+        // 首先是8位BSSID描述部分: 序号 01, 长度 06, BSSID xx xx xx xx xx xx
+        bssid = this._parseBssidData(data.slice(5, 11))
       }
-      
+      if(data.length > 13){
+        // 然后是SSID部分, 序号 02 长度 xx SSID xxxxxxx...
+        ssid = this.constructor.uint8ArrayToString(data.slice(13, 13 + data[12]));
+      }
       return {
         opMode,
         staConnStatus,
         softApConnNum,
+        bssid,
         ssid
       };
     } catch (error) {
