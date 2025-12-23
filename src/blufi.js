@@ -224,7 +224,7 @@ class BluFi {
         wx.onBluetoothDeviceFound((res) => {
           res.devices.forEach(device => {
             // 检查是否为目标设备
-            if (device.name && device.name.includes(this.devicePrefix)) {
+            if (device.localName && device.localName.includes(this.devicePrefix)) {
               this.logger.log('found dev', device.deviceId)
               // 检查是否已经发现过该设备
               if (!deviceMap.has(device.deviceId)) {
@@ -254,7 +254,7 @@ class BluFi {
       
       // 过滤出ESP32设备
       const devices = res.devices.filter(device => 
-        device.name && device.name.includes(this.devicePrefix)
+        device.localName && device.localName.includes(this.devicePrefix)
       );
       
       this.logger.log('扫描到的设备:', devices);
@@ -291,11 +291,11 @@ class BluFi {
       // 格式化设备信息以匹配微信小程序的格式
       const formattedDevice = {
         deviceId: device.id,
-        name: device.name,
+        name: device.localName,
         RSSI: 0, // Web Bluetooth API不提供RSSI信息
         advertisData: {},
         advertisServiceUUIDs: device.uuids || [],
-        localName: device.name,
+        localName: device.localName,
         serviceData: {},
         _rawDevice: device // 保存原始设备对象
       };
