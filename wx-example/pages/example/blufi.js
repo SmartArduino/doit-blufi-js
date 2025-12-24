@@ -96,6 +96,23 @@ const FRAME_CTRL_DATA_DIRECTION = 0x04; // 数据方向位
 const FRAME_CTRL_REQUIRE_ACK = 0x08;  // 需要ACK位
 const FRAME_CTRL_FRAG = 0x10;         // 分片位
 
+function isValidDeviceName(device, prefix){
+  let deviceName = device.localName || device.name || '';
+  return deviceName.includes(prefix)
+}
+function wxLog(p, logType){
+  console[logType](...p);
+  let logManager = wx.getLogManager();
+  let wxLogType = (logType == 'error'? 'debug': logType)
+  logManager[wxLogType](...p)
+}
+const wxLogger ={
+  log: (...p)=>{wxLog(p, 'log')},
+  info: (...p)=>{wxLog(p, 'info')},
+  warn: (...p)=>{wxLog(p, 'warn')},
+  error: (...p)=>{wxLog(p, 'error')},
+  debug: (...p)=>{wxLog(p, 'error')},
+}
 class BluFi {
   /**
    * 创建BluFi实例
@@ -114,6 +131,7 @@ class BluFi {
     if (!this.isWeChat && !this.isBrowser) {
       throw new Error('不支持的运行环境，需要微信小程序或支持Web Bluetooth的浏览器');
     }
+    console.log(`当前环境 Wechat: ${isWeChat}, Browser: ${isBrowser}`)
     
     this.deviceId = null;
     this.serviceId = null;
@@ -136,13 +154,13 @@ class BluFi {
     this.devicePrefix = options.devicePrefix || 'BLUFI_';
     
     // 日志管理器设置
-    this.enableLogManager = options.enableLogManager !== undefined ? options.enableLogManager : false;
+    this.enableLogManager = (options.enableLogManager == undefined ||  options.enableLogManager) ? true : false;
     
     // 设置日志器
     if (options.onLog) {
       this.logger = options.onLog;
     } else if (this.isWeChat && this.enableLogManager) {
-      this.logger = wx.getLogManager();
+      this.logger = wxLogger;
     } else {
       this.logger = console;
     }
@@ -224,7 +242,7 @@ class BluFi {
         wx.onBluetoothDeviceFound((res) => {
           res.devices.forEach(device => {
             // 检查是否为目标设备
-            if (device.localName && device.localName.includes(this.devicePrefix)) {
+            if (isValidDeviceName(device, this.devicePrefix)) {
               this.logger.log('found dev', device.deviceId)
               // 检查是否已经发现过该设备
               if (!deviceMap.has(device.deviceId)) {
@@ -254,7 +272,7 @@ class BluFi {
       
       // 过滤出ESP32设备
       const devices = res.devices.filter(device => 
-        device.localName && device.localName.includes(this.devicePrefix)
+        isValidDeviceName(device, this.devicePrefix)
       );
       
       this.logger.log('扫描到的设备:', devices);
@@ -291,11 +309,11 @@ class BluFi {
       // 格式化设备信息以匹配微信小程序的格式
       const formattedDevice = {
         deviceId: device.id,
-        name: device.localName,
+        name: device.localName || device.name,
         RSSI: 0, // Web Bluetooth API不提供RSSI信息
         advertisData: {},
         advertisServiceUUIDs: device.uuids || [],
-        localName: device.localName,
+        localName: device.localName || device.name,
         serviceData: {},
         _rawDevice: device // 保存原始设备对象
       };
