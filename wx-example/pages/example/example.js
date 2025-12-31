@@ -333,6 +333,32 @@ Page({
       });
     }
   },
+  
+  /**
+   * 获取WiFi连接状态
+   */
+  async getWifiStatus() {
+    try {
+      wx.showLoading({ title: "获取状态中..." });
+      const status = await this.blufi.getWifiStatus();
+      console.log('获取到WiFi状态:', status);
+      wx.hideLoading();
+      
+      // 显示成功提示
+      wx.showToast({
+        title: "状态获取成功",
+        icon: "success"
+      });
+    } catch (error) {
+      wx.hideLoading();
+      console.error("获取WiFi状态失败:", error);
+      wx.showToast({
+        title: "获取状态失败: " + error.message,
+        icon: "none",
+      });
+    }
+  },
+  
   showLog(){
     this.setData({
       isShowLog: !this.data.isShowLog

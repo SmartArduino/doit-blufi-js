@@ -97,8 +97,12 @@
         <text wx:if="{{wifiStatus.opModeText}}">Op Mode: {{wifiStatus.opModeText}}</text>
         <text wx:if="{{wifiStatus.ssid}}">SSID: {{wifiStatus.ssid}}</text>
         <text wx:if="{{wifiStatus.bssid}}">BSSID: {{wifiStatus.bssid}}</text>
+        <text wx:if="{{wifiStatus.softApConnNum}}">SoftAP连接数: {{wifiStatus.softApConnNum}}</text>
       </view>
     </view>
+    
+    <!-- 添加获取连接状态按钮 -->
+    <button class="btn" bindtap="getWifiStatus" style="margin-top: 10px;">获取连接状态</button>
     
     <!-- 自定义数据发送部分 -->
     <view class="section-title" style="margin-top: 20px;">发送自定义数据</view>

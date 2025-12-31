@@ -1027,6 +1027,10 @@ async _initSecurity() {
           if (this.callbacks.onWifiStatusChange) {
             this.callbacks.onWifiStatusChange(statusInfo);
           }
+          // 同时检查是否有特定的_wifiStatus回调（用于getWifiStatus方法）
+          if (this.callbacks._wifiStatus) {
+            this.callbacks._wifiStatus(statusInfo);
+          }
           break;
         case DATA_SUBTYPE.WIFI_BSSID:
           const bssid = this._parseBssidData(payload);
