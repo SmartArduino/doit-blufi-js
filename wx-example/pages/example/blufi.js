@@ -357,15 +357,19 @@ class BluFi {
       await this._promisify(wx.createBLEConnection, { deviceId });
       this.logger.log('设备连接成功');
 
-      // 协商最大MTU. 必须协商, 否则在新版本的ESP-IDF和官方AT固件中, 设备和小程序端的MTU会不一致
+      // 协商最大MTU. Android端必须协商, 否则在新版本的ESP-IDF和官方AT固件中, 设备和小程序端的MTU会不一致. iOS无法协商, 调用wx.setBLEMTU 会抛出异常, 但iOS会自动与设备协商MTU.
       try{
         // MTU值尝试使用 ESP-IDF blufi_int.h 中 BLUFI_MAX_DATA_LEN 定义的值 255
         const mtuRes = await this._promisify(wx.setBLEMTU, { deviceId, mtu: 255 }); 
         this.logger.log('协商最大MTU:', mtuRes);
       } catch (error) {
         this.logger.warn('协商最大MTU失败, 使用默认MTU 23:', error); 
-        // 使用 ESP-IDF blufi_int.h 中 GATT_DEF_BLE_MTU_SIZE 定义的值 23
-        await this._promisify(wx.setBLEMTU, { deviceId, mtu: 23 }); 
+        try{
+          await this._promisify(wx.setBLEMTU, { deviceId, mtu: 23});
+        // 使用 ESP-IDF blufi_int.h 中 GATT_DEF_BLE_MTU_SIZE 定义的值 23 
+        } catch (error) {
+          this.logger.warn('协商最小MTU失败'); 
+        }
       }
       
       // 获取服务
