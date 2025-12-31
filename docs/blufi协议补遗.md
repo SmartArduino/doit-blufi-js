@@ -423,3 +423,214 @@ uint16_t blufi_crc_checksum(uint8_t iv8, uint8_t *data, int len){
     return esp_crc16_be(0, data, len);
 }
 ```
+
+由于官方blufi文档不全面, 所以补充WIFI状态报告消息(数据帧)的完整解析方式. 官方文档说明如下: 
+```
+- 0xf (b’001111)
+     - Wi-Fi 连接状态报告
+     - 通知手机 ESP 设备的 Wi-Fi 状态，包括 STA 状态和 SoftAP 状态。用于 STA 设备连接手机或 SoftAP。但是，当手机接收到 Wi-Fi 状态时，除了本帧之外，还可以回复其他帧。
+     - data[0] 表示 opmode，包括：
+
+       * 0x00: NULL
+       * 0x01: STA
+       * 0x02: SoftAP
+       * 0x03: SoftAP & STA
+
+       data[1]：STA 设备的连接状态。0x0 表示处于连接状态且获得 IP 地址，0x1 表示处于非连接状态, 0x2 表示处于正在连接状态，0x3 表示处于连接状态但未获得 IP 地址。
+
+       data[2]：SoftAP 的连接状态，即表示有多少 STA 设备已经连接。
+
+       data[3]及后面的数据是按照 SSID/BSSID 格式提供的信息。 如果 Wi-Fi 处于正在连接状态，这里将会包含最大重连次数；如果 Wi-Fi 处于非连接状态，这里将会包含 Wi-Fi 断开连接原因和 RSSI 信息。
+```
+其中`data[3]`及其以后的数据的定义非常模糊. 实际上`data[3]`可以包括非常丰富的内容, 其格式为多组的状态数据,每组状态数据为:
+`1字节类型 + 1字节length + {length}字节的数据`. 
+为了更清晰地表明`data[3]`及其以后的数据具体是如何构造的, 下面我引用了设备端构造WIFI状态的完整函数(代码来自ESP-IDF 5.5), WIFI状态报告函数定义及其相关预处理定义如下:
+
+```c
+
+#define BLUFI_TYPE_DATA                                 0x1
+#define BLUFI_TYPE_DATA_SUBTYPE_NEG                     0x00
+#define BLUFI_TYPE_DATA_SUBTYPE_STA_BSSID               0x01
+#define BLUFI_TYPE_DATA_SUBTYPE_STA_SSID                0x02
+#define BLUFI_TYPE_DATA_SUBTYPE_STA_PASSWD              0x03
+#define BLUFI_TYPE_DATA_SUBTYPE_SOFTAP_SSID             0x04
+#define BLUFI_TYPE_DATA_SUBTYPE_SOFTAP_PASSWD           0x05
+#define BLUFI_TYPE_DATA_SUBTYPE_SOFTAP_MAX_CONN_NUM     0x06
+#define BLUFI_TYPE_DATA_SUBTYPE_SOFTAP_AUTH_MODE        0x07
+#define BLUFI_TYPE_DATA_SUBTYPE_SOFTAP_CHANNEL          0x08
+#define BLUFI_TYPE_DATA_SUBTYPE_USERNAME                0x09
+#define BLUFI_TYPE_DATA_SUBTYPE_CA                      0x0a
+#define BLUFI_TYPE_DATA_SUBTYPE_CLIENT_CERT             0x0b
+#define BLUFI_TYPE_DATA_SUBTYPE_SERVER_CERT             0x0c
+#define BLUFI_TYPE_DATA_SUBTYPE_CLIENT_PRIV_KEY         0x0d
+#define BLUFI_TYPE_DATA_SUBTYPE_SERVER_PRIV_KEY         0x0e
+#define BLUFI_TYPE_DATA_SUBTYPE_WIFI_REP                0x0f
+#define BLUFI_TYPE_DATA_SUBTYPE_REPLY_VERSION           0x10
+#define BLUFI_TYPE_DATA_SUBTYPE_WIFI_LIST               0x11
+#define BLUFI_TYPE_DATA_SUBTYPE_ERROR_INFO              0x12
+#define BLUFI_TYPE_DATA_SUBTYPE_CUSTOM_DATA             0x13
+#define BLUFI_TYPE_DATA_SUBTYPE_STA_MAX_CONN_RETRY      0x14
+#define BLUFI_TYPE_DATA_SUBTYPE_STA_CONN_END_REASON     0x15
+#define BLUFI_TYPE_DATA_SUBTYPE_STA_CONN_RSSI           0x16
+
+/**
+  * @brief Wi-Fi disconnection reason codes
+  *
+  * These reason codes are used to indicate the cause of disconnection.
+  */
+typedef enum {
+    WIFI_REASON_UNSPECIFIED                        = 1,     /**< Unspecified reason */
+    WIFI_REASON_AUTH_EXPIRE                        = 2,     /**< Authentication expired */
+    WIFI_REASON_AUTH_LEAVE                         = 3,     /**< Deauthentication due to leaving */
+    WIFI_REASON_ASSOC_EXPIRE                       = 4,     /**< Deprecated, will be removed in next IDF major release */
+    WIFI_REASON_DISASSOC_DUE_TO_INACTIVITY         = 4,     /**< Disassociated due to inactivity */
+    WIFI_REASON_ASSOC_TOOMANY                      = 5,     /**< Too many associated stations */
+    WIFI_REASON_NOT_AUTHED                         = 6,     /**< Deprecated, will be removed in next IDF major release */
+    WIFI_REASON_CLASS2_FRAME_FROM_NONAUTH_STA      = 6,     /**< Class 2 frame received from nonauthenticated STA */
+    WIFI_REASON_NOT_ASSOCED                        = 7,     /**< Deprecated, will be removed in next IDF major release */
+    WIFI_REASON_CLASS3_FRAME_FROM_NONASSOC_STA     = 7,     /**< Class 3 frame received from nonassociated STA */
+    WIFI_REASON_ASSOC_LEAVE                        = 8,     /**< Deassociated due to leaving */
+    WIFI_REASON_ASSOC_NOT_AUTHED                   = 9,     /**< Association but not authenticated */
+    WIFI_REASON_DISASSOC_PWRCAP_BAD                = 10,    /**< Disassociated due to poor power capability */
+    WIFI_REASON_DISASSOC_SUPCHAN_BAD               = 11,    /**< Disassociated due to unsupported channel */
+    WIFI_REASON_BSS_TRANSITION_DISASSOC            = 12,    /**< Disassociated due to BSS transition */
+    WIFI_REASON_IE_INVALID                         = 13,    /**< Invalid Information Element (IE) */
+    WIFI_REASON_MIC_FAILURE                        = 14,    /**< MIC failure */
+    WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT             = 15,    /**< 4-way handshake timeout */
+    WIFI_REASON_GROUP_KEY_UPDATE_TIMEOUT           = 16,    /**< Group key update timeout */
+    WIFI_REASON_IE_IN_4WAY_DIFFERS                 = 17,    /**< IE differs in 4-way handshake */
+    WIFI_REASON_GROUP_CIPHER_INVALID               = 18,    /**< Invalid group cipher */
+    WIFI_REASON_PAIRWISE_CIPHER_INVALID            = 19,    /**< Invalid pairwise cipher */
+    WIFI_REASON_AKMP_INVALID                       = 20,    /**< Invalid AKMP */
+    WIFI_REASON_UNSUPP_RSN_IE_VERSION              = 21,    /**< Unsupported RSN IE version */
+    WIFI_REASON_INVALID_RSN_IE_CAP                 = 22,    /**< Invalid RSN IE capabilities */
+    WIFI_REASON_802_1X_AUTH_FAILED                 = 23,    /**< 802.1X authentication failed */
+    WIFI_REASON_CIPHER_SUITE_REJECTED              = 24,    /**< Cipher suite rejected */
+    WIFI_REASON_TDLS_PEER_UNREACHABLE              = 25,    /**< TDLS peer unreachable */
+    WIFI_REASON_TDLS_UNSPECIFIED                   = 26,    /**< TDLS unspecified */
+    WIFI_REASON_SSP_REQUESTED_DISASSOC             = 27,    /**< SSP requested disassociation */
+    WIFI_REASON_NO_SSP_ROAMING_AGREEMENT           = 28,    /**< No SSP roaming agreement */
+    WIFI_REASON_BAD_CIPHER_OR_AKM                  = 29,    /**< Bad cipher or AKM */
+    WIFI_REASON_NOT_AUTHORIZED_THIS_LOCATION       = 30,    /**< Not authorized in this location */
+    WIFI_REASON_SERVICE_CHANGE_PERCLUDES_TS        = 31,    /**< Service change precludes TS */
+    WIFI_REASON_UNSPECIFIED_QOS                    = 32,    /**< Unspecified QoS reason */
+    WIFI_REASON_NOT_ENOUGH_BANDWIDTH               = 33,    /**< Not enough bandwidth */
+    WIFI_REASON_MISSING_ACKS                       = 34,    /**< Missing ACKs */
+    WIFI_REASON_EXCEEDED_TXOP                      = 35,    /**< Exceeded TXOP */
+    WIFI_REASON_STA_LEAVING                        = 36,    /**< Station leaving */
+    WIFI_REASON_END_BA                             = 37,    /**< End of Block Ack (BA) */
+    WIFI_REASON_UNKNOWN_BA                         = 38,    /**< Unknown Block Ack (BA) */
+    WIFI_REASON_TIMEOUT                            = 39,    /**< Timeout */
+    WIFI_REASON_PEER_INITIATED                     = 46,    /**< Peer initiated disassociation */
+    WIFI_REASON_AP_INITIATED                       = 47,    /**< AP initiated disassociation */
+    WIFI_REASON_INVALID_FT_ACTION_FRAME_COUNT      = 48,    /**< Invalid FT action frame count */
+    WIFI_REASON_INVALID_PMKID                      = 49,    /**< Invalid PMKID */
+    WIFI_REASON_INVALID_MDE                        = 50,    /**< Invalid MDE */
+    WIFI_REASON_INVALID_FTE                        = 51,    /**< Invalid FTE */
+    WIFI_REASON_TRANSMISSION_LINK_ESTABLISH_FAILED = 67,    /**< Transmission link establishment failed */
+    WIFI_REASON_ALTERATIVE_CHANNEL_OCCUPIED        = 68,    /**< Alternative channel occupied */
+
+    WIFI_REASON_BEACON_TIMEOUT                     = 200,    /**< Beacon timeout */
+    WIFI_REASON_NO_AP_FOUND                        = 201,    /**< No AP found */
+    WIFI_REASON_AUTH_FAIL                          = 202,    /**< Authentication failed */
+    WIFI_REASON_ASSOC_FAIL                         = 203,    /**< Association failed */
+    WIFI_REASON_HANDSHAKE_TIMEOUT                  = 204,    /**< Handshake timeout */
+    WIFI_REASON_CONNECTION_FAIL                    = 205,    /**< Connection failed */
+    WIFI_REASON_AP_TSF_RESET                       = 206,    /**< AP TSF reset */
+    WIFI_REASON_ROAMING                            = 207,    /**< Roaming */
+    WIFI_REASON_ASSOC_COMEBACK_TIME_TOO_LONG       = 208,    /**< Association comeback time too long */
+    WIFI_REASON_SA_QUERY_TIMEOUT                   = 209,    /**< SA query timeout */
+    WIFI_REASON_NO_AP_FOUND_W_COMPATIBLE_SECURITY  = 210,    /**< No AP found with compatible security */
+    WIFI_REASON_NO_AP_FOUND_IN_AUTHMODE_THRESHOLD  = 211,    /**< No AP found in auth mode threshold */
+    WIFI_REASON_NO_AP_FOUND_IN_RSSI_THRESHOLD      = 212,    /**< No AP found in RSSI threshold */
+} wifi_err_reason_t;
+
+static void btc_blufi_wifi_conn_report(uint8_t opmode, uint8_t sta_conn_state, uint8_t softap_conn_num, esp_blufi_extra_info_t *info, int info_len)
+{
+    uint8_t type;
+    uint8_t *data;
+    int data_len;
+    uint8_t *p;
+
+    data_len = info_len + 3;
+    p = data = osi_malloc(data_len);
+    if (data == NULL) {
+        BTC_TRACE_ERROR("%s no mem\n", __func__);
+        return;
+    }
+
+    type = BLUFI_BUILD_TYPE(BLUFI_TYPE_DATA, BLUFI_TYPE_DATA_SUBTYPE_WIFI_REP);
+    *p++ = opmode;
+    *p++ = sta_conn_state;
+    *p++ = softap_conn_num;
+
+    if (info) {
+        if (info->sta_bssid_set) {
+            *p++ = BLUFI_TYPE_DATA_SUBTYPE_STA_BSSID;
+            *p++ = 6;
+            memcpy(p, info->sta_bssid, 6);
+            p += 6;
+        }
+        if (info->sta_ssid) {
+            *p++ = BLUFI_TYPE_DATA_SUBTYPE_STA_SSID;
+            *p++ = info->sta_ssid_len;
+            memcpy(p, info->sta_ssid, info->sta_ssid_len);
+            p += info->sta_ssid_len;
+        }
+        if (info->sta_passwd) {
+            *p++ = BLUFI_TYPE_DATA_SUBTYPE_STA_PASSWD;
+            *p++ = info->sta_passwd_len;
+            memcpy(p, info->sta_passwd, info->sta_passwd_len);
+            p += info->sta_passwd_len;
+        }
+        if (info->softap_ssid) {
+            *p++ = BLUFI_TYPE_DATA_SUBTYPE_SOFTAP_SSID;
+            *p++ = info->softap_ssid_len;
+            memcpy(p, info->softap_ssid, info->softap_ssid_len);
+            p += info->softap_ssid_len;
+        }
+        if (info->softap_passwd) {
+            *p++ = BLUFI_TYPE_DATA_SUBTYPE_SOFTAP_PASSWD;
+            *p++ = info->softap_passwd_len;
+            memcpy(p, info->softap_passwd, info->softap_passwd_len);
+            p += info->softap_passwd_len;
+        }
+        if (info->softap_authmode_set) {
+            *p++ = BLUFI_TYPE_DATA_SUBTYPE_SOFTAP_AUTH_MODE;
+            *p++ = 1;
+            *p++ = info->softap_authmode;
+        }
+        if (info->softap_max_conn_num_set) {
+            *p++ = BLUFI_TYPE_DATA_SUBTYPE_SOFTAP_MAX_CONN_NUM;
+            *p++ = 1;
+            *p++ = info->softap_max_conn_num;
+        }
+        if (info->softap_channel_set) {
+            *p++ = BLUFI_TYPE_DATA_SUBTYPE_SOFTAP_CHANNEL;
+            *p++ = 1;
+            *p++ = info->softap_channel;
+        }
+        if (info->sta_max_conn_retry_set) {
+            *p++ = BLUFI_TYPE_DATA_SUBTYPE_STA_MAX_CONN_RETRY;
+            *p++ = 1;
+            *p++ = info->sta_max_conn_retry;
+        }
+        if (info->sta_conn_end_reason_set) {
+            *p++ = BLUFI_TYPE_DATA_SUBTYPE_STA_CONN_END_REASON;
+            *p++ = 1;
+            *p++ = info->sta_conn_end_reason;
+        }
+        if (info->sta_conn_rssi_set) {
+            *p++ = BLUFI_TYPE_DATA_SUBTYPE_STA_CONN_RSSI;
+            *p++ = 1;
+            *p++ = info->sta_conn_rssi;
+        }
+    }
+    if (p - data > data_len) {
+        BTC_TRACE_ERROR("%s len error %d %d\n", __func__, (int)(p - data), data_len);
+    }
+
+    btc_blufi_send_encap(type, data, data_len);
+    osi_free(data);
+}
+```

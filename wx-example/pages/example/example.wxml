@@ -55,7 +55,7 @@
       <view class="list-title">可用 WiFi</view>
       <view class="wifi-item" wx:for="{{wifiList}}" wx:key="ssid" bindtap="selectWifi" data-ssid="{{item.ssid}}">
         <view class="wifi-name">{{item.ssid}}</view>
-        <view class="wifi-rssi">信号强度: {{item.rssi}}</view>
+        <view class="wifi-rssi">信号强度: {{item.realRssi}}</view>
       </view>
     </view>
 

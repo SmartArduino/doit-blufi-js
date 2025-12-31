@@ -15,7 +15,7 @@ Page({
     enableChecksum: false, // 是否启用CRC16校验
     blufiInitialized: false, // BluFi是否已初始化
     receivedCustomData: [],
-    scanWifiTimeout: 3000, // 扫描WiFi的超时时间
+    scanWifiTimeout: 20000, // 扫描WiFi的超时时间
     log: [],
     isShowLog: false,
     // 添加WiFi状态相关数据
@@ -79,7 +79,6 @@ Page({
     // 创建BluFi实例，传入校验选项
     this.blufi = new BluFi({ 
       devicePrefix: this.data.prefix,
-      scanWifiTimeout: parseInt(this.data.scanWifiTimeout),
       enableChecksum: this.data.enableChecksum,
       onLog:{
         log: (...p)=>{
@@ -271,7 +270,7 @@ Page({
   async scanWifi() {
     try {
       wx.showLoading({ title: "扫描WiFi中..." });
-      const wifiList = await this.blufi.scanWifi();
+      const wifiList = await this.blufi.scanWifi(parseInt(this.data.scanWifiTimeout));
       this.setData({ wifiList });
       wx.hideLoading();
     } catch (error) {

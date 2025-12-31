@@ -1,4 +1,5 @@
 .vscode/
+.vercel/
 .qoder/
 # Logs
 logs

@@ -18,7 +18,7 @@ DOIT BluFi.js SDK 是一个基于 JavaScript 的 SDK，用于在微信小程序�
 * 支持读取设备端发来的自定义消息
 * 支持`BluFi.uint8ArrayToString`函数将收到的自定义消息解析为字符串
 * 默认使用`wx.logManager`作为日志输出，便于用户反馈问题调试，可通过`enableLogManager`选项禁用
-* 为了更好的兼容性，BLE MTU为20字节
+* 参照ESP-IDF源码MTU最大值255和最小值23进行MTU协商
 
 ## 待实现功能
 * 支持加密数据传输
