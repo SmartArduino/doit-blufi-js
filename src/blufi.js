@@ -356,6 +356,21 @@ class BluFi {
       // 连接设备
       await this._promisify(wx.createBLEConnection, { deviceId });
       this.logger.log('设备连接成功');
+
+      // 协商最大MTU. Android端必须协商, 否则在新版本的ESP-IDF和官方AT固件中, 设备和小程序端的MTU会不一致. iOS无法协商, 调用wx.setBLEMTU 会抛出异常, 但iOS会自动与设备协商MTU.
+      try{
+        // MTU值尝试使用 ESP-IDF blufi_int.h 中 BLUFI_MAX_DATA_LEN 定义的值 255
+        const mtuRes = await this._promisify(wx.setBLEMTU, { deviceId, mtu: 255 }); 
+        this.logger.log('协商最大MTU:', mtuRes);
+      } catch (error) {
+        this.logger.warn('协商最大MTU失败, 使用默认MTU 23:', error); 
+        try{
+          await this._promisify(wx.setBLEMTU, { deviceId, mtu: 23});
+        // 使用 ESP-IDF blufi_int.h 中 GATT_DEF_BLE_MTU_SIZE 定义的值 23 
+        } catch (error) {
+          this.logger.warn('协商最小MTU失败'); 
+        }
+      }
       
       // 获取服务
       const servicesRes = await this._promisify(wx.getBLEDeviceServices, { deviceId });
@@ -1140,7 +1155,7 @@ async _initSecurity() {
     // 启动新的计时器
     this.fragmentCache[cacheKey].timeoutId = setTimeout(() => {
       this._onFragmentTimeout(cacheKey);
-    }, 100); // 100ms超时
+    }, 1000); // 1000ms超时
   }
   
   /**
@@ -1214,7 +1229,8 @@ async _initSecurity() {
         ssidMap[ssid] = true;
         result.push({
           ssid,
-          rssi
+          rssi,
+          realRssi: rssi - 256, // 实际RSSI值, 为负值
         });
       }
       
@@ -1223,6 +1239,145 @@ async _initSecurity() {
       this.logger.warn('解析WiFi列表数据失败:', error);
       return [];
     }
+  }
+
+  /**
+   * WiFi断开连接原因代码映射表
+   * @private
+   */
+  _getWifiDisconnectReasonMessage(code) {
+    const reasonMap = {
+      1: 'WIFI_REASON_UNSPECIFIED - 未指定原因',
+      2: 'WIFI_REASON_AUTH_EXPIRE - 认证过期',
+      3: 'WIFI_REASON_AUTH_LEAVE - 由于离开而取消认证',
+      4: 'WIFI_REASON_DISASSOC_DUE_TO_INACTIVITY - 由于不活动而取消关联',
+      5: 'WIFI_REASON_ASSOC_TOOMANY - 关联的站点过多',
+      6: 'WIFI_REASON_NOT_AUTHED - 未认证',
+      7: 'WIFI_REASON_NOT_ASSOCED - 未关联',
+      8: 'WIFI_REASON_ASSOC_LEAVE - 关联后离开',
+      9: 'WIFI_REASON_ASSOC_NOT_AUTHED - 已关联但未认证',
+      10: 'WIFI_REASON_DISASSOC_PWRCAP_BAD - 由于功率能力差而取消关联',
+      11: 'WIFI_REASON_DISASSOC_SUPCHAN_BAD - 由于不支持的信道而取消关联',
+      12: 'WIFI_REASON_BSS_TRANSITION_DISASSOC - 由于BSS转换而取消关联',
+      13: 'WIFI_REASON_IE_INVALID - 信息元素(IE)无效',
+      14: 'WIFI_REASON_MIC_FAILURE - MIC失败',
+      15: 'WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT - 4次握手超时',
+      16: 'WIFI_REASON_GROUP_KEY_UPDATE_TIMEOUT - 组密钥更新超时',
+      17: 'WIFI_REASON_IE_IN_4WAY_DIFFERS - 4次握手中的IE不同',
+      18: 'WIFI_REASON_GROUP_CIPHER_INVALID - 组密码无效',
+      19: 'WIFI_REASON_PAIRWISE_CIPHER_INVALID - 成对密码无效',
+      20: 'WIFI_REASON_AKMP_INVALID - AKMP无效',
+      21: 'WIFI_REASON_UNSUPP_RSN_IE_VERSION - 不支持的RSN IE版本',
+      22: 'WIFI_REASON_INVALID_RSN_IE_CAP - RSN IE功能无效',
+      23: 'WIFI_REASON_802_1X_AUTH_FAILED - 802.1X认证失败',
+      24: 'WIFI_REASON_CIPHER_SUITE_REJECTED - 密码套件被拒绝',
+      25: 'WIFI_REASON_TDLS_PEER_UNREACHABLE - TDLS对等方无法访问',
+      26: 'WIFI_REASON_TDLS_UNSPECIFIED - TDLS未指定',
+      27: 'WIFI_REASON_SSP_REQUESTED_DISASSOC - SSP请求取消关联',
+      28: 'WIFI_REASON_NO_SSP_ROAMING_AGREEMENT - 没有SSP漫游协议',
+      29: 'WIFI_REASON_BAD_CIPHER_OR_AKM - 密码或AKM错误',
+      30: 'WIFI_REASON_NOT_AUTHORIZED_THIS_LOCATION - 在此位置未授权',
+      31: 'WIFI_REASON_SERVICE_CHANGE_PERCLUDES_TS - 服务变更排除TS',
+      32: 'WIFI_REASON_UNSPECIFIED_QOS - 未指定QoS',
+      33: 'WIFI_REASON_NOT_ENOUGH_BANDWIDTH - 带宽不足',
+      34: 'WIFI_REASON_MISSING_ACKS - 缺少确认',
+      35: 'WIFI_REASON_EXCEEDED_TXOP - 超出TXOP',
+      36: 'WIFI_REASON_STA_LEAVING - 站点离开',
+      37: 'WIFI_REASON_END_BA - BA结束',
+      38: 'WIFI_REASON_UNKNOWN_BA - 未知BA',
+      39: 'WIFI_REASON_TIMEOUT - 超时',
+      46: 'WIFI_REASON_PEER_INITIATED - 对等方发起',
+      47: 'WIFI_REASON_AP_INITIATED - AP发起',
+      48: 'WIFI_REASON_INVALID_FT_ACTION_FRAME_COUNT - 无效的FT动作帧计数',
+      49: 'WIFI_REASON_INVALID_PMKID - 无效的PMKID',
+      50: 'WIFI_REASON_INVALID_MDE - 无效的MDE',
+      51: 'WIFI_REASON_INVALID_FTE - 无效的FTE',
+      67: 'WIFI_REASON_TRANSMISSION_LINK_ESTABLISH_FAILED - 传输链路建立失败',
+      68: 'WIFI_REASON_ALTERATIVE_CHANNEL_OCCUPIED - 替代信道被占用',
+      200: 'WIFI_REASON_BEACON_TIMEOUT - 信标超时',
+      201: 'WIFI_REASON_NO_AP_FOUND - 未找到AP',
+      202: 'WIFI_REASON_AUTH_FAIL - 认证失败',
+      203: 'WIFI_REASON_ASSOC_FAIL - 关联失败',
+      204: 'WIFI_REASON_HANDSHAKE_TIMEOUT - 握手超时',
+      205: 'WIFI_REASON_CONNECTION_FAIL - 连接失败',
+      206: 'WIFI_REASON_AP_TSF_RESET - AP TSF重置',
+      207: 'WIFI_REASON_ROAMING - 漫游',
+      208: 'WIFI_REASON_ASSOC_COMEBACK_TIME_TOO_LONG - 关联返回时间过长',
+      209: 'WIFI_REASON_SA_QUERY_TIMEOUT - SA查询超时',
+      210: 'WIFI_REASON_NO_AP_FOUND_W_COMPATIBLE_SECURITY - 未找到具有兼容安全性的AP',
+      211: 'WIFI_REASON_NO_AP_FOUND_IN_AUTHMODE_THRESHOLD - 在认证模式阈值内未找到AP',
+      212: 'WIFI_REASON_NO_AP_FOUND_IN_RSSI_THRESHOLD - 在RSSI阈值内未找到AP',
+    };
+    return reasonMap[code] || `未知错误代码 (${code})`;
+  }
+
+  /**
+   * 解析WiFi状态数据中的动态数据段
+   * 按照协议格式: 类型 + 长度 + 数据
+   * @private
+   */
+  _parseWifiStatusDynamicData(data, offset = 0) {
+    const result = {};
+    let currentOffset = offset;
+    
+    while (currentOffset < data.length) {
+      if (currentOffset + 1 >= data.length) break;
+      
+      const dataType = data[currentOffset];
+      const dataLength = data[currentOffset + 1];
+      currentOffset += 2;
+      
+      if (currentOffset + dataLength > data.length) break;
+      
+      const dataValue = data.slice(currentOffset, currentOffset + dataLength);
+      
+      switch (dataType) {
+        case 0x01: // STA_BSSID
+          result.bssid = this._parseBssidData(dataValue);
+          break;
+        case 0x02: // STA_SSID
+          result.ssid = this.constructor.uint8ArrayToString(dataValue);
+          break;
+        case 0x03: // STA_PASSWD
+          result.password = this.constructor.uint8ArrayToString(dataValue);
+          break;
+        case 0x04: // SOFTAP_SSID
+          result.softapSsid = this.constructor.uint8ArrayToString(dataValue);
+          break;
+        case 0x05: // SOFTAP_PASSWD
+          result.softapPassword = this.constructor.uint8ArrayToString(dataValue);
+          break;
+        case 0x06: // SOFTAP_MAX_CONN_NUM
+          result.softapMaxConnNum = dataValue[0];
+          break;
+        case 0x07: // SOFTAP_AUTH_MODE
+          result.softapAuthMode = dataValue[0];
+          break;
+        case 0x08: // SOFTAP_CHANNEL
+          result.softapChannel = dataValue[0];
+          break;
+        case 0x09: // USERNAME
+          result.username = this.constructor.uint8ArrayToString(dataValue);
+          break;
+        case 0x14: // STA_MAX_CONN_RETRY
+          result.maxConnRetry = dataValue[0];
+          break;
+        case 0x15: // STA_CONN_END_REASON
+          result.connEndReasonCode = dataValue[0];
+          result.connEndReasonMessage = this._getWifiDisconnectReasonMessage(dataValue[0]);
+          break;
+        case 0x16: // STA_CONN_RSSI
+          result.connRssi = dataValue[0];
+          break;
+        default:
+          this.logger.warn(`未知的WiFi状态数据类型: 0x${dataType.toString(16)}`);
+          break;
+      }
+      
+      currentOffset += dataLength;
+    }
+    
+    return result;
   }
 
   /**
@@ -1252,25 +1407,20 @@ async _initSecurity() {
   _parseWifiStatusData(data) {
     try {
       if (data.length < 3) return null;
+      
+      // 解析固定部分：opMode, staConnStatus, softApConnNum
       const opMode = data[0];
       const staConnStatus = data[1];
       const softApConnNum = data[2];
       
-      let ssid = '', bssid = '';
-      if (data.length > 10) {
-        // 首先是8位BSSID描述部分: 序号 01, 长度 06, BSSID xx xx xx xx xx xx
-        bssid = this._parseBssidData(data.slice(5, 11))
-      }
-      if(data.length > 13){
-        // 然后是SSID部分, 序号 02 长度 xx SSID xxxxxxx...
-        ssid = this.constructor.uint8ArrayToString(data.slice(13, 13 + data[12]));
-      }
+      // 解析从data[3]开始的动态数据段
+      const dynamicData = this._parseWifiStatusDynamicData(data, 3);
+      
       return {
         opMode,
         staConnStatus,
         softApConnNum,
-        bssid,
-        ssid
+        ...dynamicData
       };
     } catch (error) {
       this.logger.warn('解析WiFi状态数据失败:', error);

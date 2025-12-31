@@ -98,6 +98,8 @@
         <text wx:if="{{wifiStatus.ssid}}">SSID: {{wifiStatus.ssid}}</text>
         <text wx:if="{{wifiStatus.bssid}}">BSSID: {{wifiStatus.bssid}}</text>
         <text wx:if="{{wifiStatus.softApConnNum}}">SoftAP连接数: {{wifiStatus.softApConnNum}}</text>
+        <text wx:if="{{wifiStatus.maxConnRetry}}">最大重试次数: {{wifiStatus.maxConnRetry}}</text>
+        <text wx:if="{{wifiStatus.connEndReasonCode}}">连接终止码: {{wifiStatus.connEndReasonCode}}，终止原因： {{wifiStatus.connEndReasonMessage}}</text>
       </view>
     </view>
     
